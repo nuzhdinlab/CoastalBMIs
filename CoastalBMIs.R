@@ -20,7 +20,7 @@ communityInput <- read.table("Master - Benthos ed12.csv", header=T, sep=",",as.i
 communityInput <- unite(communityInput,SampleID,c("StationID","Replicate"),sep="_",remove=FALSE)
 
 #Create basic sample metadata names list.
-sampleNames <- c("SampleID","StationWaterDepth","DistanceToOutfall","latitude","longitude")
+sampleNames <- c("SampleID","StationWaterDepth","Outfall","latitude","longitude")
 
 #Remove empty taxon rows.
 communityInput <- communityInput[communityInput$Taxon!="",]
@@ -42,9 +42,9 @@ outfallInput <- dplyr::rename(outfallInput, StationID := ID)
 #and a given sampling location.  Use this to estimate an outfall concentration at each sampling point.
 varList <- colnames(outfallInput[,2:ncol(outfallInput)])
 outfallInput[,varList] <- lapply(outfallInput[,varList], function(x) erf(1/sqrt(x)))
-outfallInput$DistanceToOutfall <- rowSums(outfallInput[,varList])
+outfallInput$Outfall <- rowSums(outfallInput[,varList])
 #Keep only relevant columns.
-outfallInput <- outfallInput[,c("StationID","DistanceToOutfall")]
+outfallInput <- outfallInput[,c("StationID","Outfall")]
 
 #Merge in distance to outfall pipe locations into the community data.
 communityInput <- dplyr::left_join(communityInput,outfallInput,by=c("StationID"))
@@ -142,7 +142,7 @@ communityInput <- dplyr::left_join(communityInput,chemSubset,by=c("StationID"))
 #Choose a taxonomic level to group count data by.
 #Levels are Domain, Kingdom, Phylum, Class, Order, Family, GenusSpecies, OTUID
 taxonomicLevels <- c("Phylum","Class","Order","Family","Genus","species")
-taxonomicLevel <- c("Order") #Choose a taxonomic level to aggregate count data on.
+taxonomicLevel <- c("Phylum") #Choose a taxonomic level to aggregate count data on.
 
 #Create simplified community data frame to summarize data at a particular taxonomic level.
 communityInputSummarized <- communityInput[, c("SampleID",taxonomicLevel,"Abundance")]
@@ -216,16 +216,15 @@ for(j in 1:100){
           metadataSubset <- metadataSubset[!duplicated(metadataSubset),]
           meanDist <- mean(distm(metadataSubset[,c("longitude","latitude")]))
           sdDist <- sd(distm(metadataSubset[,c("longitude","latitude")]))
-          zeta_2_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=2,distance.type="ortho",rescale=T,normalize="Jaccard",plot=F,sam=zetaMax)
+          zeta_2_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=2,distance.type="ortho",rescale=T,normalize="Jaccard",plot=F)
           zeta_2_DD <- zeta_2_DD$reg$coefficients[2]
-          zeta_10_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=10,distance.type="ortho",rescale=T,normalize="Jaccard",plot=F,sam=zetaMax)
+          zeta_10_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=10,distance.type="ortho",rescale=T,normalize="Jaccard",plot=F)
           zeta_10_DD <- zeta_10_DD$reg$coefficients[2]
-          meanOutfallDist <- mean(metadataSubset$DistanceToOutfall)
-          sdOutfallDist <- sd(metadataSubset$DistanceToOutfall)
+          meanOutfall <- mean(metadataSubset$Outfall)
+          sdOutfall <- sd(metadataSubset$Outfall)
           meanDepth <- mean(metadataSubset$StationWaterDepth)
           sdDepth <- sd(metadataSubset$StationWaterDepth)
           chemData <- metadataSubset[,colnames(metadataSubset) %in% chemNames]
-          
           chemRow <- colMeans(chemData,na.rm=T)
           chemRow[is.nan(chemRow)] <- NA
           sedimentData <- metadataSubset[,colnames(metadataSubset) %in% sedimentNames]
@@ -234,11 +233,13 @@ for(j in 1:100){
           assessmentData <- metadataSubset[,colnames(metadataSubset) %in% assessmentNames]
           assessmentRow <- colMeans(assessmentData,na.rm=T)
           assessmentRow[is.nan(assessmentRow)] <- NA
-          dataRow <- t(cbind(t(as.data.frame(list(c(stratumType,year,score,meanDepth,sdDepth,meanDist,sdDist,zeta_2_DD,zeta_10_DD,meanOutfallDist,sdOutfallDist,zetaOrders,zetaSDOrders,ExpExp,ExpAIC,PLExp,PLAIC,as.list(as.numeric(sedimentRow)),as.list(as.numeric(chemRow)),as.list(as.numeric(assessmentRow))))))))
-          colnames(dataRow) <- c("stratumType","year","ConditionScore","meanDepth","sdDepth","meanDist","sdDist","zeta_2_DD","zeta_10_DD","meanOutfallDist","sdOutfallDist",zetaNames,zetaSDNames,"ExpExp","ExpAIC","PLExp","PLAIC",sedimentNames,chemNames,assessmentNames)
+          envVar <- colVars(as.matrix(cbind(chemData,sedimentData,metadataSubset[,c("StationWaterDepth","Outfall")])),na.rm=T)
+          envVar <- sqrt(sum(envVar[!is.nan(envVar)]^2))/mean(envVar[!is.nan(envVar)])
+          dataRow <- t(cbind(t(as.data.frame(list(c(stratumType,year,score,meanDepth,sdDepth,meanDist,sdDist,zeta_2_DD,zeta_10_DD,meanOutfall,sdOutfall,zetaOrders,zetaSDOrders,ExpExp,ExpAIC,PLExp,PLAIC,as.list(as.numeric(sedimentRow)),as.list(as.numeric(chemRow)),as.list(as.numeric(assessmentRow)),envVar))))))
+          colnames(dataRow) <- c("stratumType","year","ConditionScore","meanDepth","sdDepth","meanDist","sdDist","zeta_2_DD","zeta_10_DD","meanOutfall","sdOutfall",zetaNames,zetaSDNames,"ExpExp","ExpAIC","PLExp","PLAIC",sedimentNames,chemNames,assessmentNames,"envVar")
           rownames(dataRow) <- NULL
           zetaAnalysis <- rbind(zetaAnalysis,dataRow)
-          print(paste(j,stratumType,year,score,meanDepth,sdDepth,meanDist,sdDist,zeta_2_DD,zeta_10_DD,meanOutfallDist,sdOutfallDist,zetaOrders,zetaSDOrders,ExpExp,ExpAIC,PLExp,PLAIC))
+          print(paste(j,stratumType,year,score,meanDepth,sdDepth,meanDist,sdDist,zeta_2_DD,zeta_10_DD,meanOutfall,sdOutfall,zetaOrders,zetaSDOrders,ExpExp,ExpAIC,PLExp,PLAIC,envVar))
           print(chemRow)
           print(sedimentRow)
           print(assessmentRow)
@@ -248,7 +249,7 @@ for(j in 1:100){
   }
 }
 
-colnames(zetaAnalysis) <- c("stratumType","year","ConditionScore","meanDepth","sdDepth","meanDist","sdDist","zeta_2_DD","zeta_10_DD","meanOutfallDist","sdOutfallDist",zetaNames,zetaSDNames,"ExpExp","ExpAIC","PLExp","PLAIC",sedimentNames,chemNames,assessmentNames)
+colnames(zetaAnalysis) <- c("stratumType","year","ConditionScore","meanDepth","sdDepth","meanDist","sdDist","zeta_2_DD","zeta_10_DD","meanOutfall","sdOutfall",zetaNames,zetaSDNames,"ExpExp","ExpAIC","PLExp","PLAIC",sedimentNames,chemNames,assessmentNames,"envVar")
 tmp <- zetaAnalysis$stratumType
 indx <- sapply(zetaAnalysis, is.factor)
 zetaAnalysis[indx] <- lapply(zetaAnalysis[indx], function(x) as.numeric(as.character(x)))
@@ -261,20 +262,9 @@ write.table(zetaAnalysis,paste("coastalBMIs",taxonomicLevel,".txt",sep=""),quote
 ##To run locally.
 zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 
-#Model the condition score as a function of zeta diversity measures.
-zetaModel <- lm(ConditionScore ~ zeta_1+zeta_2+zeta_10,data=zetaAnalysis)
-calc.relimp(zetaModel)
-plot(zetaModel$model$ConditionScore,zetaModel$fitted.values)
-cor.test(zetaModel$model$ConditionScore,zetaModel$fitted.values)
-zetaAnalysis$modeledConditionScore <- zetaModel$fitted.values
-#Plot model errors.
-layout(matrix(c(1,2,3,4),2,2)) # optional 4 graphs/page
-plot(zetaModel)
-dev.off()
-
 #Model the modeled condition score as a function of environmental metrics.
 require(car)
-environmentNames <- c(chemNames,sedimentNames,"meanDist","meanDepth","meanOutfallDist")
+environmentNames <- c(chemNames,sedimentNames,"meanDist","meanDepth","meanOutfall")
 zetaModel <- lm(formula(paste("modeledConditionScore ~ ",paste(environmentNames,collapse="+"))),data=zetaAnalysis)
 calc.relimp(zetaModel)
 #Filter our variables with a high variance inflation factor.
@@ -310,26 +300,26 @@ print(ConditionScoremodel)
 #and various measures of zeta diversity.
 require(Hmisc)
 require(corrplot)
-taxonomicLevel <- "Order"
+taxonomicLevel <- "Family"
 zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 #Find common environmental parameters which contribute to the variation in the modeled CS.
-environmentNames <- c("meanDist","meanDepth","meanOutfallDist")
+environmentNames <- c("meanDist","meanDepth","meanOutfall","envVar")
 #Calculate the modeled SQO BRI scores.
 tmp <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]
 zetaModel <- lm(SQO_BRI~zeta_1+zeta_2+zeta_10,data=tmp)
 tmp$modeledSQO_BRI <- zetaModel$fitted.values
 #Create correlation matrix, with significance values.
-zetaCor <- tmp[,c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","zeta_2_DD","zeta_10_DD",environmentNames)]
+zetaCor <- tmp[,c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10",environmentNames)]
 zetaCor <- rcorr(as.matrix(zetaCor),type="pearson")
 corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanDist","meanOutfallDist","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","zeta_2_DD","zeta_10_DD"), new=c("Depth","Distance","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]",":zeta[DD2]",":zeta[DD10]"))
+setnames(corr, old=c("meanDepth","meanDist","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Distance","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
-         sig.level = 0.05, tl.col="black", tl.srt=45, tl.cex=1.3,
+         sig.level = 0.0001, tl.col="black", tl.srt=45, tl.cex=1.3,
          order="original", title=paste("BMIs with SQO BRI scores\naggregated to",taxonomicLevel),
          mar=c(0,0,3,0))
 
@@ -338,23 +328,20 @@ tmp <- zetaAnalysis[!is.na(zetaAnalysis$BRI),]
 zetaModel <- lm(BRI~zeta_1+zeta_2+zeta_10,data=tmp)
 tmp$modeledBRI <- zetaModel$fitted.values
 #Create correlation matrix, with significance values.
-zetaCor <- tmp[,c("BRI","modeledBRI","ConditionScore","zeta_1","zeta_2","zeta_10","zeta_2_DD","zeta_10_DD",environmentNames)]
+zetaCor <- tmp[,c("BRI","modeledBRI","zeta_1","zeta_2","zeta_10",environmentNames)]
 zetaCor <- rcorr(as.matrix(zetaCor),type="pearson")
 corr <- zetaCor$r
-corr[is.nan(corr)] <- NA
-is.na(corr) <- sapply(corr, is.infinite)
 p.mat <- zetaCor$P
-p.mat[is.nan(p.mat)] <- NA
-is.na(p.mat) <- sapply(p.mat, is.infinite)
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanDist","meanOutfallDist","BRI","modeledBRI","ConditionScore","zeta_1","zeta_2","zeta_10","zeta_2_DD","zeta_10_DD"), new=c("Depth","Distance","Outfall","BRI","Modeled BRI","CS",":zeta[1]",":zeta[2]",":zeta[10]",":zeta[DD2]",":zeta[DD10]"))
+setnames(corr, old=c("meanDepth","meanDist","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Distance","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
-         sig.level = 0.05, tl.col="black", tl.srt=45, tl.cex=1.3,
+         sig.level = 0.0001, tl.col="black", tl.srt=45, tl.cex=1.3,
          order="original", title=paste("BMIs with BRI scores\naggregated to",taxonomicLevel),
          mar=c(0,0,3,0))
+
 
 #Mapping metadata
 require(ggplot2)
@@ -368,7 +355,8 @@ require(devtools)
 require(webshot)
 require(viridis)
 #Prepare data input for mapping.
-mapInput <- communityInput[,colnames(communityInput) %in% c("latitude","longitude","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","DistanceToOutfall",chemNames,sedimentNames,assessmentNames)]
+mapInput <- communityInput[,colnames(communityInput) %in% c("SampleID","latitude","longitude","SampleYear","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","Outfall",chemNames,sedimentNames,assessmentNames)]
+mapInput <- mapInput[mapInput$SampleID %in% sampleList$SampleID,]
 mapInput <- mapInput[!duplicated(mapInput),]
 #Map data for continuous variables.
 CalMap = leaflet(mapInput) %>% 
