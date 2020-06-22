@@ -216,9 +216,9 @@ for(j in 1:100){
           metadataSubset <- metadataSubset[!duplicated(metadataSubset),]
           meanDist <- mean(distm(metadataSubset[,c("longitude","latitude")]))
           sdDist <- sd(distm(metadataSubset[,c("longitude","latitude")]))
-          zeta_2_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=2,distance.type="ortho",rescale=T,normalize="Jaccard",plot=F)
+          zeta_2_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=2,distance.type="ortho",rescale=T,normalize="Jaccard",trsf="log",plot=F)
           zeta_2_DD <- zeta_2_DD$reg$coefficients[2]
-          zeta_10_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=10,distance.type="ortho",rescale=T,normalize="Jaccard",plot=F)
+          zeta_10_DD <- Zeta.ddecay(xy=metadataSubset[,c("longitude","latitude")],data.spec=data.spec,order=10,distance.type="ortho",rescale=T,normalize="Jaccard",trsf="log",plot=F)
           zeta_10_DD <- zeta_10_DD$reg$coefficients[2]
           meanOutfall <- mean(metadataSubset$Outfall)
           sdOutfall <- sd(metadataSubset$Outfall)
@@ -255,67 +255,78 @@ indx <- sapply(zetaAnalysis, is.factor)
 zetaAnalysis[indx] <- lapply(zetaAnalysis[indx], function(x) as.numeric(as.character(x)))
 zetaAnalysis <- do.call(data.frame,lapply(zetaAnalysis, function(x) replace(x, is.infinite(x),NA)))
 zetaAnalysis$stratumType <- tmp
+
+#Calculate the modeled SQO BRI scores.
+tmp1 <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]
+zetaModel <- lm(SQO_BRI~zeta_1+zeta_2+zeta_10,data=tmp1)
+tmp1$modeledSQO_BRI <- zetaModel$fitted.values
+tmp1$AssessmentType <- "SQO_BRI"
+tmp1$modeledBRI <- NA
+#Calculate the modeled BRI scores.
+tmp2 <- zetaAnalysis[!is.na(zetaAnalysis$BRI),]
+zetaModel <- lm(BRI~zeta_1+zeta_2+zeta_10,data=tmp2)
+tmp2$modeledBRI <- zetaModel$fitted.values
+tmp2$AssessmentType <- "BRI"
+tmp2$modeledSQO_BRI <- NA
+
+#Merge in data frames together for zeta diversity analysis.
+zetaAnalysis <- rbind(tmp1,tmp2)
 #Save zeta diversity analysis for a given taxonomic level.
 write.table(zetaAnalysis,paste("coastalBMIs",taxonomicLevel,".txt",sep=""),quote=FALSE,sep="\t",row.names = FALSE)
 #
 
 ##To run locally.
+taxonomicLevel <- "Family"
 zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 
-#Model the modeled condition score as a function of environmental metrics.
+#Assess contributions of environmental variables to modeled measures of biotic integrity.
 require(car)
-environmentNames <- c(chemNames,sedimentNames,"meanDist","meanDepth","meanOutfall")
-zetaModel <- lm(formula(paste("modeledConditionScore ~ ",paste(environmentNames,collapse="+"))),data=zetaAnalysis)
+environmentNames <- c("meanDist","meanDepth","meanOutfall","envVar",sedimentNames,chemNames)
+zetaModel <- lm(formula(paste("modeledSQO_BRI ~ ",paste(environmentNames,collapse="+"))),data=zetaAnalysis)
 calc.relimp(zetaModel)
 #Filter our variables with a high variance inflation factor.
 varList <- car::vif(zetaModel)
 varList <- names(varList[varList <= 10])
 #Model the modeled condition score as a function of the remaining environmental metrics
-zetaModel <- lm(formula(paste("modeledConditionScore ~ ",paste(varList,collapse="+"))),data=zetaAnalysis)
+zetaModel <- lm(formula(paste("modeledSQO_BRI ~ ",paste(varList,collapse="+"))),data=zetaAnalysis)
 calc.relimp(zetaModel)
-cor.test(zetaModel$model$modeledConditionScore,zetaModel$fitted.values)
 
-#Model the condition score as a function of environmental metrics.
-zetaModel <- lm(formula(paste("ConditionScore ~ ",paste(environmentNames,collapse="+"))),data=zetaAnalysis)
+#Assess contributions of environmental variables to modeled measures of biotic integrity.
+require(car)
+environmentNames <- c(chemNames,sedimentNames,"meanDist","meanDepth","meanOutfall")
+zetaModel <- lm(formula(paste("SQO_BRI ~ ",paste(environmentNames,collapse="+"))),data=zetaAnalysis)
 calc.relimp(zetaModel)
 #Filter our variables with a high variance inflation factor.
 varList <- car::vif(zetaModel)
 varList <- names(varList[varList <= 10])
-#Model the condition score as a function of the remaining environmental metrics
-zetaModel <- lm(formula(paste("ConditionScore ~ ",paste(varList,collapse="+"))),data=zetaAnalysis)
+#Model the modeled condition score as a function of the remaining environmental metrics
+zetaModel <- lm(formula(paste("SQO_BRI ~ ",paste(varList,collapse="+"))),data=tmp)
 calc.relimp(zetaModel)
-cor.test(zetaModel$model$ConditionScore,zetaModel$fitted.values)
 
 # Assessing R2 shrinkage using 10-Fold Cross-Validation 
 require(bootstrap)
 require(caret)
 set.seed(1)
 train.control <- trainControl(method="repeatedcv",number=10,repeats=10)
-ConditionScoremodel <- train(SQO_BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),],method="lm",trControl=train.control)
+ConditionScoremodel <- train(SQO_BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis,na.action=na.omit,method="lm",trControl=train.control)
 print(ConditionScoremodel)
-ConditionScoremodel <- train(BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis[!is.na(zetaAnalysis$BRI),],method="lm",trControl=train.control)
+ConditionScoremodel <- train(BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis,na.action=na.omit,method="lm",trControl=train.control)
 print(ConditionScoremodel)
 
 #Correlation plots of mean and modeled condition scores against environmental parameters
 #and various measures of zeta diversity.
 require(Hmisc)
 require(corrplot)
-taxonomicLevel <- "Family"
-zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 #Find common environmental parameters which contribute to the variation in the modeled CS.
-environmentNames <- c("meanDist","meanDepth","meanOutfall","envVar")
-#Calculate the modeled SQO BRI scores.
-tmp <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]
-zetaModel <- lm(SQO_BRI~zeta_1+zeta_2+zeta_10,data=tmp)
-tmp$modeledSQO_BRI <- zetaModel$fitted.values
-#Create correlation matrix, with significance values.
-zetaCor <- tmp[,c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10",environmentNames)]
-zetaCor <- rcorr(as.matrix(zetaCor),type="pearson")
+environmentNames <- c("meanDepth","meanOutfall","envVar")
+#Create correlation matrix, with significance values, for SQO_BRI scores.
+zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10",environmentNames)]
+zetaCor <- rcorr(as.matrix(zetaCor),type="spearman")
 corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanDist","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Distance","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
+setnames(corr, old=c("meanDepth","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
@@ -323,18 +334,14 @@ corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
          order="original", title=paste("BMIs with SQO BRI scores\naggregated to",taxonomicLevel),
          mar=c(0,0,3,0))
 
-#Calculate the modeled SQO BRI scores.
-tmp <- zetaAnalysis[!is.na(zetaAnalysis$BRI),]
-zetaModel <- lm(BRI~zeta_1+zeta_2+zeta_10,data=tmp)
-tmp$modeledBRI <- zetaModel$fitted.values
-#Create correlation matrix, with significance values.
-zetaCor <- tmp[,c("BRI","modeledBRI","zeta_1","zeta_2","zeta_10",environmentNames)]
-zetaCor <- rcorr(as.matrix(zetaCor),type="pearson")
+#Create correlation matrix, with significance values, using BRI scores.
+zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$BRI),c("BRI","modeledBRI","zeta_1","zeta_2","zeta_10",environmentNames)]
+zetaCor <- rcorr(as.matrix(zetaCor),type="spearman")
 corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanDist","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Distance","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
+setnames(corr, old=c("meanDepth","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
@@ -342,6 +349,26 @@ corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
          order="original", title=paste("BMIs with BRI scores\naggregated to",taxonomicLevel),
          mar=c(0,0,3,0))
 
+#Check contributions to variations in how zeta diversity decays with distance.
+summary(aov(zeta_2_DD~stratumType+year+SQO_BRI,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
+summary(aov(zeta_2_DD~stratumType+year+BRI,data=zetaAnalysis[!is.na(zetaAnalysis$BRI),]))
+
+#Compare steepness of zeta diversity decay with distance between nearshore and offshore environments.
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"zeta_2_DD"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"zeta_2_DD"],alternative="g")
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"zeta_10_DD"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"zeta_10_DD"],alternative="g")
+
+#Compare environmental variability between nearshore and offshore environments.
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"envVar"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"envVar"],alternative="t")
+
+#Relative likelihoods of community assembly models
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"ExpAIC"],alternative="l")
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"ExpAIC"],alternative="l")
+
+#Community assembly model likelihoods versus measures of biotic integrity
+plot(zetaAnalysis$SQO_BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC)
+cor.test(zetaAnalysis$SQO_BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC,method="spearman")
+plot(zetaAnalysis$BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC)
+cor.test(zetaAnalysis$BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC,method="spearman")
 
 #Mapping metadata
 require(ggplot2)
@@ -361,10 +388,10 @@ mapInput <- mapInput[!duplicated(mapInput),]
 #Map data for continuous variables.
 CalMap = leaflet(mapInput) %>% 
   addTiles()
-ColorScale <- colorNumeric(palette=plasma(10),domain=mapInput$SQO_BRI)
-CalMap %>% addCircleMarkers(color = ~ColorScale(SQO_BRI), fill = TRUE,radius=1,fillOpacity = 1) %>% 
+ColorScale <- colorNumeric(palette=plasma(10),domain=mapInput$Outfall)
+CalMap %>% addCircleMarkers(color = ~ColorScale(Outfall), fill = TRUE,radius=1,fillOpacity = 1) %>% 
   addProviderTiles(providers$Esri.WorldTopoMap) %>%
-  addLegend("topright", pal=ColorScale,values=~SQO_BRI,title="SQO BRI")
+  addLegend("topright", pal=ColorScale,values=~Outfall,title="Relative outfall<br>concentration")
 
 #Map data for categorical variables.
 pal <- colorFactor(palette = 'viridis', domain = mapInput$Stratum)
