@@ -142,7 +142,7 @@ communityInput <- dplyr::left_join(communityInput,chemSubset,by=c("StationID"))
 #Choose a taxonomic level to group count data by.
 #Levels are Domain, Kingdom, Phylum, Class, Order, Family, GenusSpecies, OTUID
 taxonomicLevels <- c("Phylum","Class","Order","Family","Genus","species")
-taxonomicLevel <- c("Phylum") #Choose a taxonomic level to aggregate count data on.
+taxonomicLevel <- c("Family") #Choose a taxonomic level to aggregate count data on.
 
 #Create simplified community data frame to summarize data at a particular taxonomic level.
 communityInputSummarized <- communityInput[, c("SampleID",taxonomicLevel,"Abundance")]
@@ -279,6 +279,10 @@ write.table(zetaAnalysis,paste("coastalBMIs",taxonomicLevel,".txt",sep=""),quote
 taxonomicLevel <- "Family"
 zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 
+#Determine the relative importance of various orders of zeta diversity in models of biotic integrity.
+calc.relimp(lm(SQO_BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
+calc.relimp(lm(BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis[!is.na(zetaAnalysis$BRI),]))
+
 #Assess contributions of environmental variables to modeled measures of biotic integrity.
 require(car)
 environmentNames <- c("meanDist","meanDepth","meanOutfall","envVar",sedimentNames,chemNames)
@@ -350,8 +354,10 @@ corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
          mar=c(0,0,3,0))
 
 #Check contributions to variations in how zeta diversity decays with distance.
-summary(aov(zeta_2_DD~stratumType+year+SQO_BRI,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
-summary(aov(zeta_2_DD~stratumType+year+BRI,data=zetaAnalysis[!is.na(zetaAnalysis$BRI),]))
+summary(aov(zeta_2_DD~stratumType*year*SQO_BRI,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
+summary(aov(zeta_10_DD~stratumType*year*SQO_BRI,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
+summary(aov(zeta_2_DD~stratumType*year*BRI,data=zetaAnalysis[!is.na(zetaAnalysis$BRI),]))
+summary(aov(zeta_10_DD~stratumType*year*BRI,data=zetaAnalysis[!is.na(zetaAnalysis$BRI),]))
 
 #Compare steepness of zeta diversity decay with distance between nearshore and offshore environments.
 wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"zeta_2_DD"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"zeta_2_DD"],alternative="g")
@@ -363,6 +369,8 @@ wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"envVar"],zetaAnalysis[!is
 #Relative likelihoods of community assembly models
 wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"ExpAIC"],alternative="l")
 wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"ExpAIC"],alternative="l")
+t.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"ExpAIC"],alternative="l")
+t.test(zetaAnalysis[!is.na(zetaAnalysis$BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"ExpAIC"],alternative="l")
 
 #Community assembly model likelihoods versus measures of biotic integrity
 plot(zetaAnalysis$SQO_BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC)
@@ -385,18 +393,19 @@ require(viridis)
 mapInput <- communityInput[,colnames(communityInput) %in% c("SampleID","latitude","longitude","SampleYear","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","Outfall",chemNames,sedimentNames,assessmentNames)]
 mapInput <- mapInput[mapInput$SampleID %in% sampleList$SampleID,]
 mapInput <- mapInput[!duplicated(mapInput),]
+mapInput <- mapInput[!is.na(mapInput$SQO_BRI),]
 #Map data for continuous variables.
 CalMap = leaflet(mapInput) %>% 
   addTiles()
-ColorScale <- colorNumeric(palette=plasma(10),domain=mapInput$Outfall)
-CalMap %>% addCircleMarkers(color = ~ColorScale(Outfall), fill = TRUE,radius=1,fillOpacity = 1) %>% 
+ColorScale <- colorNumeric(palette=plasma(10),domain=mapInput$SQO_BRI)
+CalMap %>% addCircleMarkers(color = ~ColorScale(SQO_BRI), fill = TRUE,radius=1,fillOpacity = 1) %>% 
   addProviderTiles(providers$Esri.WorldTopoMap) %>%
-  addLegend("topright", pal=ColorScale,values=~Outfall,title="Relative outfall<br>concentration")
+  addLegend("topright", pal=ColorScale,values=~SQO_BRI,title="SQO BRI")
 
 #Map data for categorical variables.
 pal <- colorFactor(palette = 'viridis', domain = mapInput$Stratum)
-CalMap = leaflet(stationInput) %>% 
+CalMap = leaflet(mapInput) %>% 
   addTiles()
 CalMap %>% addCircleMarkers(color = ~pal(Stratum), fill = TRUE,radius=1,fillOpacity = 1) %>% 
   addProviderTiles(providers$Esri.WorldTopoMap) %>%
-  addLegend("topright", pal=pal,values=~Stratum,title="SCCWRP sample<br>Habitats")
+  addLegend("topright", pal=pal,values=~Stratum,title="SCCWRP sample<br>habitat types")
