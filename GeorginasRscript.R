@@ -213,7 +213,7 @@ require(webshot)
 require(viridis)
 
 #Prepare data input for mapping.
-8mapInput <- communityInput[,colnames(communityInput) %in% c("SampleID","latitude","longitude","SampleYear","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","Outfall",chemNames,sedimentNames,assessmentNames)]
+mapInput <- communityInput[,colnames(communityInput) %in% c("SampleID","latitude","longitude","SampleYear","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","Outfall",chemNames,sedimentNames,assessmentNames)]
 mapInput <- mapInput[mapInput$SampleID %in% mapInput$SampleID,]
 mapInput <- mapInput[!duplicated(mapInput),]
 mapInput <- mapInput[!is.na(mapInput$SQO_BRI),]
@@ -277,3 +277,25 @@ left_join(mapInput, ZetaAnalysis, by= c("SampleYear" = "year"))
 left_join(mapInput, ZetaAnalysis, by= c("Stratum" = "stratumType"))
 
 mapInputDistance <- left_join(mapInput, ZetaAnalysis, by= c("SampleYear" = "year", "Stratum" = "stratumType"))
+#zeta_2_DD map
+map <- mapInputDistance[,colnames(mapInputDistance) %in% c("SampleID","latitude","longitude","SampleYear","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","Outfall","zeta_2_DD","BRI",chemNames,sedimentNames,assessmentNames)]
+map <- map[map$SampleID %in% map$SampleID,]
+map <- map[!duplicated(map),]
+map <- map[!is.na(map$zeta_2_DD),]
+#Map data for continuous variables.
+CalMap = leaflet(map) %>% 
+  addTiles()
+ColorScale <- colorNumeric(palette=plasma(10),domain=map$zeta_2_DD)
+CalMap %>% addCircleMarkers(color = ~ColorScale(zeta_2_DD), fill = TRUE,radius=1,fillOpacity = 1) %>% 
+  addProviderTiles(providers$Esri.WorldTopoMap) %>%
+  addLegend("topright", pal=ColorScale,values=~zeta_2_DD,title="zeta_2_DD")
+
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"zeta_2_DD"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"zeta_2_DD"],alternative="greater")
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"zeta_10_DD"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"zeta_10_DD"],alternative="greater")
+
+
+zetaAnalysis <- read.delim("coastalBMIsClass.txt")
+zetaAnalysis <- read.delim("coastalBMIsOrder.txt")
+zetaAnalysis <- read.delim("coastalBMIsFamily.txt")
+zetaAnalysis <- read.delim("coastalBMIsGenus.txt")
+zetaAnalysis <- read.delim("coastalBMIsspecies.txt")
