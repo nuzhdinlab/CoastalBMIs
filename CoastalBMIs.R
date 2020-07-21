@@ -59,6 +59,14 @@ taxaInput$Taxon <- as.character(taxaInput$Taxon)
 #Merge in taxonomic data into community data.
 communityInput <- dplyr::left_join(communityInput,taxaInput,by=c("Taxon"))
 
+#Get the taxonomic richness per sample at various levels of taxonomic aggregation.
+setDT(communityInput)[, Nspecies:=uniqueN(species), by=SampleID]
+setDT(communityInput)[, NGenera:=uniqueN(Genus), by=SampleID]
+setDT(communityInput)[, NFamilies:=uniqueN(Family), by=SampleID]
+setDT(communityInput)[, NOrders:=uniqueN(Order), by=SampleID]
+setDT(communityInput)[, NClasses:=uniqueN(Class), by=SampleID]
+setDT(communityInput)[, NPhyla:=uniqueN(Phylum), by=SampleID]
+
 #Read in assessment scores.
 assessmentInput <- read.table("Master Data - Assessment Scores.csv", header=T, sep=",", as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 
@@ -142,10 +150,10 @@ communityInput <- dplyr::left_join(communityInput,chemSubset,by=c("StationID"))
 #Choose a taxonomic level to group count data by.
 #Levels are Domain, Kingdom, Phylum, Class, Order, Family, GenusSpecies, OTUID
 taxonomicLevels <- c("Phylum","Class","Order","Family","Genus","species")
-taxonomicLevel <- c("Family") #Choose a taxonomic level to aggregate count data on.
+taxonomicLevel <- c("Phylum") #Choose a taxonomic level to aggregate count data on.
 
 #Create simplified community data frame to summarize data at a particular taxonomic level.
-communityInputSummarized <- communityInput[, c("SampleID",taxonomicLevel,"Abundance")]
+communityInputSummarized <- dplyr::select(communityInput,SampleID,taxonomicLevel,Abundance)
 #Remove rows without assigned taxonomy at a particular level.
 communityInputSummarized <- communityInputSummarized[communityInputSummarized[,c(taxonomicLevel)]!="",]
 #Aggregate communities at a particular taxonomic level.
@@ -186,6 +194,10 @@ tmp$Stratum <- as.character(tmp$Stratum)
 sampleList <- dplyr::left_join(sampleList,tmp,by=c("Stratum","SampleYear","ConditionScore"))
 sampleMax <- 15 #Minimum number of samples per stratum / year / condition score group to be considered for analysis.
 sampleList <- sampleList[sampleList$Freq >= sampleMax,]
+
+#tmp <- communityInput[,c("SampleID","SQO_BRI","BRI",chemNames,"Outfall","Nspecies","NGenera","NFamilies","NOrders","NClasses","NPhyla")]
+#tmp <- tmp[!duplicated(tmp),]
+#write.table(tmp,"OutfallAndCommunityData.csv",quote=FALSE,sep=",",row.names = FALSE)
 
 set.seed(1)
 zetaMax <- 10 #Maximum order to calculate zeta diversity.
@@ -276,7 +288,7 @@ write.table(zetaAnalysis,paste("coastalBMIs",taxonomicLevel,".txt",sep=""),quote
 #
 
 ##To run locally.
-taxonomicLevel <- "Family"
+taxonomicLevel <- "Genus"
 zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
 
 #Determine the relative importance of various orders of zeta diversity in models of biotic integrity.
@@ -317,20 +329,24 @@ print(ConditionScoremodel)
 ConditionScoremodel <- train(BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis,na.action=na.omit,method="lm",trControl=train.control)
 print(ConditionScoremodel)
 
-#Correlation plots of mean and modeled condition scores against environmental parameters
+#Individual correlation plots of mean and modeled condition scores against environmental parameters
 #and various measures of zeta diversity.
 require(Hmisc)
 require(corrplot)
 #Find common environmental parameters which contribute to the variation in the modeled CS.
 environmentNames <- c("meanDepth","meanOutfall","envVar")
 #Create correlation matrix, with significance values, for SQO_BRI scores.
-zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10",environmentNames)]
+zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","PLAIC","ExpAIC",environmentNames)]
+#Calculate PLAIC - ExpAIC, a measure of the relative likelihood of niche differentiation versus stochastic community assembly processes.
+zetaCor$deltaAIC <- (zetaCor$PLAIC - zetaCor$ExpAIC)
+zetaCor$PLAIC <- NULL
+zetaCor$ExpAIC <- NULL
 zetaCor <- rcorr(as.matrix(zetaCor),type="spearman")
 corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
+setnames(corr, old=c("meanDepth","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
@@ -339,19 +355,90 @@ corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
          mar=c(0,0,3,0))
 
 #Create correlation matrix, with significance values, using BRI scores.
-zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$BRI),c("BRI","modeledBRI","zeta_1","zeta_2","zeta_10",environmentNames)]
+zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$BRI),c("BRI","modeledBRI","zeta_1","zeta_2","zeta_10","PLAIC","ExpAIC",environmentNames)]
+#Calculate PLAIC - ExpAIC, a measure of the relative likelihood of niche differentiation versus stochastic community assembly processes.
+zetaCor$deltaAIC <- (zetaCor$PLAIC - zetaCor$ExpAIC)
+zetaCor$PLAIC <- NULL
+zetaCor$ExpAIC <- NULL
 zetaCor <- rcorr(as.matrix(zetaCor),type="spearman")
 corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10"), new=c("Depth","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]"))
+setnames(corr, old=c("meanDepth","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
          sig.level = 0.0001, tl.col="black", tl.srt=45, tl.cex=1.3,
          order="original", title=paste("BMIs with BRI scores\naggregated to",taxonomicLevel),
          mar=c(0,0,3,0))
+
+#Multipanel correlation plots of mean and modeled condition scores against environmental parameters
+#and various measures of zeta diversity.
+#Create a merged zeta diversity data frame for all taxonomic levels of aggregation.
+zetaTotal <- data.frame()
+for(taxonomicLevel in taxonomicLevels){
+  zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
+  zetaAnalysis$Level <- taxonomicLevel
+  zetaAnalysis$deltaAIC <- (zetaAnalysis$PLAIC - zetaAnalysis$ExpAIC)
+  zetaTotal <- rbind(zetaAnalysis,zetaTotal)
+}
+zetaTotal$PLAIC <- NULL
+zetaTotal$ExpAIC <- NULL
+
+#Split nearshore zeta diversity data into a list of data frames using taxonomic level as the split variable. 
+B <- split(zetaTotal[!is.na(zetaTotal$SQO_BRI),c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","deltaAIC",environmentNames)],zetaTotal[!is.na(zetaTotal$SQO_BRI),"Level"])
+M <- lapply(B, function(x) rcorr(as.matrix(x),type="spearman"))
+M <- M[taxonomicLevels]
+
+#Create multipanel nearshore zeta diversity correlation plots.
+dev.off()
+par(mfrow=c(3,2))
+col<- colorRampPalette(c("red","white","blue"))(40)
+i=1
+for(Level in names(M)){
+  corr <- M[[Level]]$r
+  p.mat <- M[[Level]]$P
+  #Rename variables for plotting.
+  corr <- as.data.frame(corr)
+  setnames(corr, old=c("meanDepth","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
+  corr <- as.matrix(corr)
+  #Create correlation plot.
+  corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="lower",
+           sig.level = 0.0001, tl.col="black", tl.srt=15, tl.cex=0.8,
+           order="original",mar=c(0,0,1,0))
+  mtext(paste("(",LETTERS[i],")",sep=""), side=3, line=1, cex=2, adj=0, las=0)
+  mtext(Level, side=2, line=0, cex=1.5, adj=0.5, las=3)
+  box("figure", col="black", lwd = 2)
+  i=i+1
+}
+
+#Split offhore zeta diversity data into a list of data frames using taxonomic level as the split variable. 
+B <- split(zetaTotal[!is.na(zetaTotal$BRI),c("BRI","modeledBRI","zeta_1","zeta_2","zeta_10","deltaAIC",environmentNames)],zetaTotal[!is.na(zetaTotal$BRI),"Level"])
+M <- lapply(B, function(x) rcorr(as.matrix(x),type="spearman"))
+M <- M[taxonomicLevels]
+
+#Create multipanel offshore zeta diversity correlation plots.
+dev.off()
+par(mfrow=c(3,2))
+col<- colorRampPalette(c("red","white","blue"))(40)
+i=1
+for(Level in names(M)){
+  corr <- M[[Level]]$r
+  p.mat <- M[[Level]]$P
+  #Rename variables for plotting.
+  corr <- as.data.frame(corr)
+  setnames(corr, old=c("meanDepth","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
+  corr <- as.matrix(corr)
+  #Create correlation plot.
+  corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="lower",
+           sig.level = 0.0001, tl.col="black", tl.srt=15, tl.cex=0.8,
+           order="original",mar=c(0,0,1,0))
+  mtext(paste("(",LETTERS[i],")",sep=""), side=3, line=1, cex=2, adj=0, las=0)
+  mtext(Level, side=2, line=0, cex=1.5, adj=0.5, las=3)
+  box("figure", col="black", lwd = 2)
+  i=i+1
+}
 
 #Check contributions to variations in how zeta diversity decays with distance.
 summary(aov(zeta_2_DD~stratumType*year*SQO_BRI,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
@@ -372,11 +459,8 @@ wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$BRI),"PLAIC"],zetaAnalysis[!is.na(z
 t.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"ExpAIC"],alternative="l")
 t.test(zetaAnalysis[!is.na(zetaAnalysis$BRI),"PLAIC"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"ExpAIC"],alternative="l")
 
-#Community assembly model likelihoods versus measures of biotic integrity
-plot(zetaAnalysis$SQO_BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC)
-cor.test(zetaAnalysis$SQO_BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC,method="spearman")
-plot(zetaAnalysis$BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC)
-cor.test(zetaAnalysis$BRI,zetaAnalysis$PLAIC-zetaAnalysis$ExpAIC,method="spearman")
+#Comparing levels of environmental heterogeneity.
+wilcox.test(zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),"envVar"],zetaAnalysis[!is.na(zetaAnalysis$BRI),"envVar"])
 
 #Mapping metadata
 require(ggplot2)
@@ -393,6 +477,7 @@ require(viridis)
 mapInput <- communityInput[,colnames(communityInput) %in% c("SampleID","latitude","longitude","SampleYear","Stratum","DJG_Stratum1","Region","StationWaterDepth","ConditionScore","Outfall",chemNames,sedimentNames,assessmentNames)]
 mapInput <- mapInput[mapInput$SampleID %in% sampleList$SampleID,]
 mapInput <- mapInput[!duplicated(mapInput),]
+
 mapInput <- mapInput[!is.na(mapInput$SQO_BRI),]
 #Map data for continuous variables.
 CalMap = leaflet(mapInput) %>% 
