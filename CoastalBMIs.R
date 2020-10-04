@@ -288,8 +288,19 @@ write.table(zetaAnalysis,paste("coastalBMIs",taxonomicLevel,".txt",sep=""),quote
 #
 
 ##To run locally.
-taxonomicLevel <- "Genus"
+taxonomicLevel <- "species"
 zetaAnalysis <- read.table(paste("coastalBMIs",taxonomicLevel,".txt",sep=""), header=TRUE, sep="\t",as.is=T,skip=0,fill=TRUE,check.names=FALSE, encoding = "UTF-8")
+
+zeta_nearshore <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]
+ggplot(zeta_nearshore, aes(x=stratumType, y=zeta_2_DD)) + geom_boxplot() + geom_signif(comparisons = split(t(combn(levels(as.factor(zeta_nearshore$stratumType)), 2)), seq(nrow(t(combn(levels(as.factor(zeta_nearshore$stratumType)), 2))))), map_signif_level = TRUE, step_increase=0.1)
+zeta_nearshore <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]
+ggplot(zeta_nearshore, aes(x=stratumType, y=zeta_10_DD)) + geom_boxplot() + geom_signif(comparisons = split(t(combn(levels(as.factor(zeta_nearshore$stratumType)), 2)), seq(nrow(t(combn(levels(as.factor(zeta_nearshore$stratumType)), 2))))), map_signif_level = TRUE, step_increase=0.1)
+zeta_offshore <- zetaAnalysis[!is.na(zetaAnalysis$BRI),]
+ggplot(zeta_offshore, aes(x=stratumType, y=zeta_2_DD)) + geom_boxplot() + geom_signif(comparisons = split(t(combn(levels(as.factor(zeta_offshore$stratumType)), 2)), seq(nrow(t(combn(levels(as.factor(zeta_offshore$stratumType)), 2))))), map_signif_level = TRUE, step_increase=0.1)
+zeta_offshore <- zetaAnalysis[!is.na(zetaAnalysis$BRI),]
+ggplot(zeta_offshore, aes(x=stratumType, y=zeta_10_DD)) + geom_boxplot() + geom_signif(comparisons = split(t(combn(levels(as.factor(zeta_offshore$stratumType)), 2)), seq(nrow(t(combn(levels(as.factor(zeta_offshore$stratumType)), 2))))), map_signif_level = TRUE, step_increase=0.1)
+ggboxplot(zetaAnalysis, x = "year", y = "zeta_2_DD", color = "AssessmentType",palette = c("#00AFBB", "#E7B800")) 
+
 
 #Determine the relative importance of various orders of zeta diversity in models of biotic integrity.
 calc.relimp(lm(SQO_BRI~zeta_1+zeta_2+zeta_10,data=zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),]))
@@ -334,7 +345,7 @@ print(ConditionScoremodel)
 require(Hmisc)
 require(corrplot)
 #Find common environmental parameters which contribute to the variation in the modeled CS.
-environmentNames <- c("meanDepth","meanOutfall","envVar")
+environmentNames <- c("meanDepth","envVar")
 #Create correlation matrix, with significance values, for SQO_BRI scores.
 zetaCor <- zetaAnalysis[!is.na(zetaAnalysis$SQO_BRI),c("SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","PLAIC","ExpAIC",environmentNames)]
 #Calculate PLAIC - ExpAIC, a measure of the relative likelihood of niche differentiation versus stochastic community assembly processes.
@@ -346,7 +357,7 @@ corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanOutfall","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","Outfall","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
+setnames(corr, old=c("meanDepth","SQO_BRI","modeledSQO_BRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","SQO BRI","Modeled SQO BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
@@ -365,7 +376,7 @@ corr <- zetaCor$r
 p.mat <- zetaCor$P
 #Rename variables for plotting.
 corr <- as.data.frame(corr)
-setnames(corr, old=c("meanDepth","meanOutfall","BRI","modeledBRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","Outfall","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
+setnames(corr, old=c("meanDepth","BRI","modeledBRI","zeta_1","zeta_2","zeta_10","deltaAIC"), new=c("Depth","BRI","Modeled BRI",":zeta[1]",":zeta[2]",":zeta[10]",":Delta[AIC]"))
 corr <- as.matrix(corr)
 #Create correlation plot.
 corrplot(corr = corr, p.mat = p.mat, diag = FALSE, type="upper",
