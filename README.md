@@ -1,2 +1,4 @@
 # CoastalBMIs
-Code to analyze coastal sediment benthic macroinvertebrate community data.
+Code to analyze coastal sediment benthic macroinvertebrate community data is available at CoastalBMIs.R .
+
+All of the input data used to run the analysis within CoastalBMIs.R is available in the csv files within this repository.
